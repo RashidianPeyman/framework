@@ -1,0 +1,9 @@
+{
+  "properties": [
+    {
+      "name": "custom.security.jwt.secret",
+      "type": "java.lang.String",
+      "description": "Secret key for signing the JWT token."
+    }
+  ]
+}
