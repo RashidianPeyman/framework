@@ -3,6 +3,7 @@ package dev.peyman.framework;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,19 +17,13 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Bean;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
 
 @AutoConfiguration
 @EnableWebSecurity
 @EnableMethodSecurity // برای استفاده از @PreAuthorize در میکروسرویس‌ها
 @EnableConfigurationProperties(JwtProperties.class)
+@ConditionalOnProperty(prefix = "security.module", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class SecurityAutoConfiguration {
 
     @Bean
@@ -37,17 +32,6 @@ public class SecurityAutoConfiguration {
         return new JwtService(properties);
     }
 
-    /*  @Bean
-      public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, JwtProperties props) throws Exception {
-          http.csrf(csrf -> csrf.disable())
-                  .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                  .authorizeHttpRequests(auth -> auth
-                          .requestMatchers("/auth/**").permitAll()
-                          .anyRequest().authenticated()
-                  )
-                  .addFilterBefore(new JwtAuthenticationFilter(jwtService, props), UsernamePasswordAuthenticationFilter.class);
-          return http.build();
-      }*/
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, JwtProperties props, ObjectProvider<UserStatusChecker> statusCheckerProvider, ObjectProvider<RequestSessionTracker> requestSessionTrackers) throws Exception {
         http.csrf(csrf -> csrf.disable())
@@ -62,6 +46,7 @@ public class SecurityAutoConfiguration {
                             .anyRequest().authenticated();
                 })
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, props, statusCheckerProvider, requestSessionTrackers), UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 }
