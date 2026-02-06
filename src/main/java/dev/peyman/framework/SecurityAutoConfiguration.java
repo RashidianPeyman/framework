@@ -23,7 +23,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 @EnableWebSecurity
 @EnableMethodSecurity // برای استفاده از @PreAuthorize در میکروسرویس‌ها
 @EnableConfigurationProperties(JwtProperties.class)
-@ConditionalOnProperty(prefix = "security.module", name = "enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnProperty(prefix = "security.module", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class SecurityAutoConfiguration {
 
     @Bean
