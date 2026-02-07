@@ -1,0 +1,114 @@
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.Map;
+
+@Service
+public class BankingService {
+
+    @Autowired
+    private NamedParameterJdbcTemplate jdbcTemplate;
+
+    /**
+     * اجرای عملیات پرداخت با رعایت اصول تراکنش‌های بانکی
+     * @param cardNumber شماره کارت
+     * @param amount مبلغ تراکنش
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void processPayment(String cardNumber, BigDecimal amount) {
+        try {
+            // ۱. دریافت اطلاعات و قفل کردن ردیف مورد نظر در اوراکل (Pessimistic Locking)
+            // استفاده از WAIT 5 برای جلوگیری از مسدود شدن بی‌پایان Thread
+            String fetchSql = "SELECT c.is_active, a.remain_credit, a.remain_debit, a.real_balance, a.id " +
+                              "FROM account a " +
+                              "JOIN card c ON a.id = c.account_id " +
+                              "WHERE c.card_number = :cardNumber " +
+                              "FOR UPDATE OF a.id WAIT 5";
+
+            Map<String, Object> params = Collections.singletonMap("cardNumber", cardNumber);
+            Map<String, Object> result;
+
+            try {
+                result = jdbcTemplate.queryForMap(fetchSql, params);
+            } catch (EmptyResultDataAccessException e) {
+                throw new RuntimeException("کارت یافت نشد.");
+            }
+
+            // ۲. چک کردن وضعیت فعال بودن کارت
+            // در اوراکل معمولاً NUMBER(1) برای boolean استفاده می‌شود
+            int isActive = ((Number) result.get("is_active")).intValue();
+            if (isActive != 1) {
+                throw new RuntimeException("کارت فعال نیست.");
+            }
+
+            // ۳. استخراج مقادیر مالی (استفاده از BigDecimal برای دقت بالا)
+            BigDecimal remainCredit = new BigDecimal(result.get("remain_credit").toString());
+            BigDecimal remainDebit = new BigDecimal(result.get("remain_debit").toString());
+            BigDecimal realBalance = new BigDecimal(result.get("real_balance").toString());
+            Long accountId = ((Number) result.get("id")).longValue();
+
+            // ۴. محاسبه اعتبار موجود (available_credit = remain_credit - remain_debit)
+            BigDecimal availableCredit = remainCredit.subtract(remainDebit);
+            
+            BigDecimal addedToDebit = BigDecimal.ZERO;
+            BigDecimal deductedFromBalance = BigDecimal.ZERO;
+
+            // ۵. منطق کسر وجه (Business Logic)
+            if (amount.compareTo(availableCredit) <= 0) {
+                // اگر کل مبلغ از اعتبار قابل کسر باشد
+                addedToDebit = amount;
+            } else if (realBalance.add(availableCredit).compareTo(amount) >= 0) {
+                // اگر بخشی از اعتبار و بخشی از مانده واقعی کسر شود
+                addedToDebit = availableCredit;
+                deductedFromBalance = amount.subtract(availableCredit);
+            } else {
+                throw new RuntimeException("موجودی کافی نیست (مجموع اعتبار و مانده واقعی).");
+            }
+
+            // ۶. بروزرسانی حساب (Atomic Update)
+            updateAccount(accountId, addedToDebit, deductedFromBalance);
+
+            // ۷. ثبت تاریخچه تراکنش
+            saveTransactionLog(accountId, addedToDebit, deductedFromBalance);
+
+        } catch (PessimisticLockingFailureException e) {
+            throw new RuntimeException("حساب توسط تراکنش دیگری قفل شده است. مجدداً تلاش کنید.");
+        } catch (DataAccessException e) {
+            throw new RuntimeException("خطای پایگاه داده: " + e.getMessage());
+        }
+    }
+
+    private void updateAccount(Long accountId, BigDecimal addDebit, BigDecimal subBalance) {
+        String updateSql = "UPDATE account SET " +
+                           "remain_debit = remain_debit + :addDebit, " +
+                           "real_balance = real_balance - :subBalance " +
+                           "WHERE id = :id";
+        
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("addDebit", addDebit)
+                .addValue("subBalance", subBalance)
+                .addValue("id", accountId);
+
+        jdbcTemplate.update(updateSql, params);
+    }
+
+    private void saveTransactionLog(Long accountId, BigDecimal addedToDebit, BigDecimal deductedFromBalance) {
+        String logSql = "INSERT INTO transaction_log (id, account_id, amount_debit, amount_balance, log_date) " +
+                        "VALUES (transaction_seq.NEXTVAL, :accId, :addDebit, :subBalance, CURRENT_TIMESTAMP)";
+        
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("accId", accountId)
+                .addValue("addDebit", addedToDebit)
+                .addValue("subBalance", deductedFromBalance);
+
+        jdbcTemplate.update(logSql, params);
+    }
+}
