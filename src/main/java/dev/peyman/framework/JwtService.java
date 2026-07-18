@@ -1,15 +1,13 @@
 package dev.peyman.framework;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import java.util.Date;
 
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 public class JwtService {
@@ -26,6 +24,13 @@ public class JwtService {
                 .parseClaimsJws(token)
                 .getBody()
                 .getSubject();
+    }
+    public Claims extractClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(Keys.hmacShaKeyFor(properties.getSecret().getBytes()))
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     public String generateToken(String username, Map<String, Object> extraClaims) {

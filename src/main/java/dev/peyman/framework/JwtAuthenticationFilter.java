@@ -1,5 +1,6 @@
 package dev.peyman.framework;
 
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,15 +10,19 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final JwtProperties properties;
     private final ObjectProvider<UserStatusChecker> statusChecker; // استفاده از ObjectProvider برای اختیاری بودن
     private final ObjectProvider<RequestSessionTracker> sessionTrackerProvider;
-    public JwtAuthenticationFilter(JwtService jwtService, JwtProperties properties,ObjectProvider<UserStatusChecker> statusChecker,ObjectProvider<RequestSessionTracker> sessionTrackerProvider) {
+
+    public JwtAuthenticationFilter(JwtService jwtService, JwtProperties properties, ObjectProvider<UserStatusChecker> statusChecker, ObjectProvider<RequestSessionTracker> sessionTrackerProvider) {
         this.jwtService = jwtService;
         this.properties = properties;
         this.statusChecker = statusChecker;
@@ -32,7 +37,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authHeader != null && authHeader.startsWith(properties.getPrefix())) {
             String token = authHeader.substring(properties.getPrefix().length());
             try {
-                String username = jwtService.extractUsername(token);
+                //  String username = jwtService.extractUsername(token);
+               Claims claims = jwtService.extractClaims(token);
+                String username = claims.get("username").toString();
                 if (username != null) {
                     boolean isValid = statusChecker.getIfAvailable(() -> u -> true).isUserValid(username);
                     if (!isValid) {
@@ -51,8 +58,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    UserDetail userDetail = new UserDetail(username, new  ArrayList<>());
-                  //  UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetail, null, userDetail.authorities());
+                    UserDetail userDetail = new UserDetail(username, claims, new ArrayList<>());
+                    //  UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetail, null, userDetail.authorities());
                     UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userDetail, null, userDetail.authorities());
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
